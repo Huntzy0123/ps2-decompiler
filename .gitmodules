@@ -1,0 +1,3 @@
+[submodule "tools/ccc"]
+	path = tools/ccc
+	url = https://github.com/chaoticgd/ccc.git

@@ -1,0 +1,45 @@
+# Output directories
+output/
+elfs/*.elf
+!elfs/.gitkeep
+
+# ISOs (too large, user provides their own)
+isos/*.iso
+isos/*.ISO
+isos/*.bin
+isos/*.BIN
+!isos/.gitkeep
+
+# CCC build artifacts
+tools/ccc/bin/
+tools/ccc/build/
+tools/ccc/CMakeCache.txt
+tools/ccc/CMakeFiles/
+tools/ccc/cmake_install.cmake
+tools/ccc/Makefile
+tools/ccc/*.a
+tools/ccc/lib/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.Python
+env/
+venv/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Ghidra project files
+*.gpr
+*.rep/
+*.lock
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
