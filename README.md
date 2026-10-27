@@ -37,16 +37,38 @@ cmake --build bin/
 cd ../..
 ```
 
-**Windows (Developer Command Prompt or PowerShell with CMake/Visual Studio):**
+**Windows:** use the helper script (picks a working CMake generator automatically):
+
+```bat
+git submodule update --init --recursive
+scripts\build_ccc.bat
+```
+
+Or configure manually. **Do not pass `-A x64` with NMake** — that combination causes  
+`Generator NMake Makefiles does not support platform specification`.
 
 ```bat
 cd tools\ccc
-cmake -B bin -A x64
+
+REM Clean a bad/partial configure if you hit generator errors:
+rmdir /s /q bin
+
+REM Preferred: Visual Studio generator (supports -A x64)
+cmake -B bin -G "Visual Studio 17 2022" -A x64
 cmake --build bin --config Release
+
+REM Alternative: Ninja (no -A)
+REM cmake -B bin -G Ninja -DCMAKE_BUILD_TYPE=Release
+REM cmake --build bin
+
+REM Alternative: NMake from "x64 Native Tools Command Prompt for VS" (no -A)
+REM cmake -B bin -G "NMake Makefiles" -DCMAKE_BUILD_TYPE=Release
+REM cmake --build bin
+
 cd ..\..
 ```
 
-Built binaries land in `tools\ccc\bin\` (or `tools\ccc\bin\Release\` depending on generator). Copy or ensure `stdump.exe`, `uncc.exe`, and `demangle.exe` are under `tools\ccc\bin\` so the scripts can find them.
+Built binaries land in `tools\ccc\bin\` or `tools\ccc\bin\Release\`. The Python scripts look in both places.
 
 ### 3. Install Ghidra Extension
 
@@ -274,6 +296,17 @@ Most retail PS2 games are stripped of debug symbols. Use Ghidra for analysis ins
 1. Set `GHIDRA_INSTALL_DIR` to your Ghidra root folder
 2. Or pass `--ghidra` with the full path to `analyzeHeadless.bat`
 3. Confirm Java is installed (Ghidra requires a JDK)
+
+### CMake: NMake does not support platform specification (Windows)
+You used `-A x64` with the NMake Makefiles generator. Fix:
+
+```bat
+cd tools\ccc
+rmdir /s /q bin
+scripts\build_ccc.bat
+```
+
+Or pick one generator explicitly (see Build CCC Tools above). Prefer Visual Studio 2022 with the **Desktop development with C++** workload, or use Ninja / an **x64 Native Tools** prompt with NMake and **no** `-A`.
 
 ### PCSX2 save states won't import
 Change PCSX2 compression from zstd to Deflate64 in settings.
