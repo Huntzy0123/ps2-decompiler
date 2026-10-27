@@ -7,38 +7,38 @@ Integrated pipeline for PS2 reverse engineering using:
 - Ghidra analysis with emotionengine-reloaded
 
 Usage:
-    python3 ps2_workflow.py <iso_or_elf> [--output DIR]
-    python3 ps2_workflow.py --symbols-only <elf_file>
-    python3 ps2_workflow.py --ghidra <elf_file>
+    python ps2_workflow.py <iso_or_elf> [--output DIR]
+    python ps2_workflow.py --symbols-only <elf_file>
+    python ps2_workflow.py --ghidra <elf_file>
 """
 
 import os
 import sys
 import argparse
 import subprocess
-import shutil
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Tuple
+
+from platform_utils import find_ghidra, resolve_tool
 
 
 # Tool paths
-SCRIPT_DIR = Path(__file__).parent
+SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = SCRIPT_DIR.parent
 CCC_BIN = PROJECT_DIR / "tools" / "ccc" / "bin"
-STDUMP = CCC_BIN / "stdump"
-UNCC = CCC_BIN / "uncc"
-DEMANGLE = CCC_BIN / "demangle"
-
-GHIDRA_PATH = "/Applications/Ghidra/support/analyzeHeadless"
+STDUMP = resolve_tool(CCC_BIN, "stdump")
+UNCC = resolve_tool(CCC_BIN, "uncc")
+DEMANGLE = resolve_tool(CCC_BIN, "demangle")
 
 
 def check_tools() -> dict:
     """Check which tools are available"""
+    ghidra = find_ghidra()
     tools = {
         'stdump': STDUMP.exists(),
         'uncc': UNCC.exists(),
         'demangle': DEMANGLE.exists(),
-        'ghidra': Path(GHIDRA_PATH).exists(),
+        'ghidra': ghidra is not None,
     }
     return tools
 
@@ -46,7 +46,7 @@ def check_tools() -> dict:
 def extract_symbols_stdump(elf_path: Path, output_dir: Path) -> Tuple[bool, str]:
     """
     Extract symbols from ELF using stdump (CCC)
-    
+
     This extracts:
     - Data types (structs, unions, enums)
     - Function signatures
@@ -54,12 +54,12 @@ def extract_symbols_stdump(elf_path: Path, output_dir: Path) -> Tuple[bool, str]
     """
     if not STDUMP.exists():
         return False, f"stdump not found at {STDUMP}"
-    
+
     output_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # Generate different outputs
     results = []
-    
+
     # 1. Print symbols as C++ code
     cpp_output = output_dir / f"{elf_path.stem}_symbols.cpp"
     try:
@@ -70,12 +70,12 @@ def extract_symbols_stdump(elf_path: Path, output_dir: Path) -> Tuple[bool, str]
             timeout=300
         )
         if result.returncode == 0:
-            with open(cpp_output, 'w') as f:
+            with open(cpp_output, 'w', encoding='utf-8', newline='\n') as f:
                 f.write(result.stdout)
             results.append(f"C++ symbols: {cpp_output}")
     except Exception as e:
         results.append(f"C++ export failed: {e}")
-    
+
     # 2. Export as JSON for further processing
     json_output = output_dir / f"{elf_path.stem}_symbols.json"
     try:
@@ -86,12 +86,12 @@ def extract_symbols_stdump(elf_path: Path, output_dir: Path) -> Tuple[bool, str]
             timeout=300
         )
         if result.returncode == 0:
-            with open(json_output, 'w') as f:
+            with open(json_output, 'w', encoding='utf-8', newline='\n') as f:
                 f.write(result.stdout)
             results.append(f"JSON symbols: {json_output}")
     except Exception as e:
         results.append(f"JSON export failed: {e}")
-    
+
     # 3. List files (for uncc)
     files_output = output_dir / "SOURCES.txt"
     try:
@@ -102,12 +102,12 @@ def extract_symbols_stdump(elf_path: Path, output_dir: Path) -> Tuple[bool, str]
             timeout=60
         )
         if result.returncode == 0:
-            with open(files_output, 'w') as f:
+            with open(files_output, 'w', encoding='utf-8', newline='\n') as f:
                 f.write(result.stdout)
             results.append(f"Source files: {files_output}")
     except Exception as e:
         results.append(f"Files list failed: {e}")
-    
+
     # 4. Print all types
     types_output = output_dir / f"{elf_path.stem}_types.h"
     try:
@@ -118,12 +118,12 @@ def extract_symbols_stdump(elf_path: Path, output_dir: Path) -> Tuple[bool, str]
             timeout=300
         )
         if result.returncode == 0:
-            with open(types_output, 'w') as f:
+            with open(types_output, 'w', encoding='utf-8', newline='\n') as f:
                 f.write(result.stdout)
             results.append(f"Types header: {types_output}")
     except Exception as e:
         results.append(f"Types export failed: {e}")
-    
+
     return True, "\n".join(results)
 
 
@@ -134,14 +134,14 @@ def run_uncc(elf_path: Path, output_dir: Path) -> Tuple[bool, str]:
     """
     if not UNCC.exists():
         return False, f"uncc not found at {UNCC}"
-    
+
     sources_file = output_dir / "SOURCES.txt"
     if not sources_file.exists():
         return False, "SOURCES.txt not found. Run stdump files first."
-    
+
     src_output = output_dir / "src"
     src_output.mkdir(exist_ok=True)
-    
+
     try:
         result = subprocess.run(
             [str(UNCC), str(elf_path), str(src_output)],
@@ -149,7 +149,7 @@ def run_uncc(elf_path: Path, output_dir: Path) -> Tuple[bool, str]:
             text=True,
             timeout=600
         )
-        
+
         if result.returncode == 0:
             # Count generated files
             cpp_files = list(src_output.glob("**/*.cpp"))
@@ -157,14 +157,17 @@ def run_uncc(elf_path: Path, output_dir: Path) -> Tuple[bool, str]:
             return True, f"Generated {len(cpp_files)} .cpp and {len(h_files)} .h files"
         else:
             return False, f"uncc failed: {result.stderr}"
-    
+
     except Exception as e:
         return False, f"uncc error: {e}"
 
 
 def create_ghidra_import_script(elf_path: Path, symbols_dir: Path, output_path: Path):
     """Create a Ghidra script to import symbols"""
-    
+
+    # Use forward slashes in embedded paths so the script is portable in Ghidra
+    json_file = (symbols_dir / f"{elf_path.stem}_symbols.json").as_posix()
+
     script_content = f'''
 // Auto-generated Ghidra import script for {elf_path.name}
 // @category PS2
@@ -182,7 +185,7 @@ from ghidra.program.flatapi import FlatProgramAPI
 def import_symbols():
     """Import symbols from CCC JSON output"""
     
-    json_file = r"{symbols_dir / f'{elf_path.stem}_symbols.json'}"
+    json_file = r"{json_file}"
     
     if not os.path.exists(json_file):
         print(f"Symbol file not found: {{json_file}}")
@@ -217,10 +220,10 @@ def import_symbols():
 
 import_symbols()
 '''
-    
-    with open(output_path, 'w') as f:
+
+    with open(output_path, 'w', encoding='utf-8', newline='\n') as f:
         f.write(script_content)
-    
+
     return output_path
 
 
@@ -229,8 +232,8 @@ def main():
         description='PS2 Decompilation Workflow',
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    
-    parser.add_argument('input', help='ISO or ELF file')
+
+    parser.add_argument('input', nargs='?', help='ISO or ELF file')
     parser.add_argument('--output', '-o', help='Output directory')
     parser.add_argument('--symbols-only', action='store_true',
                         help='Only extract symbols with CCC')
@@ -238,25 +241,31 @@ def main():
                         help='Launch Ghidra analysis')
     parser.add_argument('--check-tools', action='store_true',
                         help='Check available tools')
-    
+
     args = parser.parse_args()
-    
+
     if args.check_tools:
         tools = check_tools()
         print("Available tools:")
         for tool, available in tools.items():
             status = "OK" if available else "MISSING"
             print(f"  {tool}: {status}")
+        ghidra = find_ghidra()
+        if ghidra:
+            print(f"  ghidra path: {ghidra}")
         return
-    
+
+    if not args.input:
+        parser.error("input is required unless --check-tools is used")
+
     input_path = Path(args.input)
     if not input_path.exists():
         print(f"Error: File not found: {input_path}")
         sys.exit(1)
-    
+
     output_dir = Path(args.output) if args.output else input_path.parent / "output"
     output_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # Determine if input is ISO or ELF
     elf_path = input_path
     if input_path.suffix.lower() in ['.iso', '.bin']:
@@ -264,19 +273,19 @@ def main():
         # Import and use extract_elf module
         sys.path.insert(0, str(SCRIPT_DIR))
         from extract_elf import extract_elf_from_iso
-        
+
         success, message, extracted_path = extract_elf_from_iso(
-            str(input_path), 
+            str(input_path),
             str(output_dir / "elfs")
         )
-        
+
         if not success:
             print(f"Failed to extract ELF: {message}")
             sys.exit(1)
-        
+
         print(f"  {message}")
         elf_path = Path(extracted_path)
-    
+
     print(f"\n=== Step 2: Extracting Symbols with CCC ===")
     symbols_dir = output_dir / "symbols"
     success, message = extract_symbols_stdump(elf_path, symbols_dir)
@@ -284,20 +293,20 @@ def main():
         print(f"  {message}")
     else:
         print(f"  Warning: {message}")
-    
+
     if args.symbols_only:
         print(f"\nSymbols extracted to: {symbols_dir}")
         return
-    
+
     print(f"\n=== Step 3: Running uncc (source reconstruction) ===")
     success, message = run_uncc(elf_path, symbols_dir)
     print(f"  {message}")
-    
+
     print(f"\n=== Step 4: Creating Ghidra import script ===")
     script_path = output_dir / "import_symbols.py"
     create_ghidra_import_script(elf_path, symbols_dir, script_path)
     print(f"  Created: {script_path}")
-    
+
     print(f"""
 ================================================================================
 WORKFLOW COMPLETE

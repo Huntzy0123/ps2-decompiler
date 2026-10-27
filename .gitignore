@@ -33,6 +33,12 @@ venv/
 .AppleDouble
 .LSOverride
 
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+*.exe
+
 # Ghidra project files
 *.gpr
 *.rep/

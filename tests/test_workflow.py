@@ -54,16 +54,16 @@ class TestPathConstants:
         assert isinstance(CCC_BIN, Path)
 
     def test_stdump_path_format(self):
-        """Test STDUMP path ends correctly"""
-        assert STDUMP.name == "stdump"
+        """Test STDUMP path ends correctly (with optional .exe on Windows)"""
+        assert STDUMP.name == "stdump" or STDUMP.name == "stdump.exe"
 
     def test_uncc_path_format(self):
-        """Test UNCC path ends correctly"""
-        assert UNCC.name == "uncc"
+        """Test UNCC path ends correctly (with optional .exe on Windows)"""
+        assert UNCC.name == "uncc" or UNCC.name == "uncc.exe"
 
     def test_demangle_path_format(self):
-        """Test DEMANGLE path ends correctly"""
-        assert DEMANGLE.name == "demangle"
+        """Test DEMANGLE path ends correctly (with optional .exe on Windows)"""
+        assert DEMANGLE.name == "demangle" or DEMANGLE.name == "demangle.exe"
 
     def test_project_dir_exists_or_is_valid_path(self):
         """Test PROJECT_DIR is a valid path structure"""

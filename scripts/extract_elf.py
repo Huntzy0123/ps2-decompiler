@@ -234,13 +234,25 @@ def extract_elf_from_iso(iso_path: str, output_dir: str = None) -> Tuple[bool, s
         return False, f"Error processing ISO: {str(e)}", None
 
 
+def _unique_glob(directory: Path, patterns: list) -> list:
+    """Glob patterns without duplicates (important on case-insensitive FS)."""
+    seen = set()
+    files = []
+    for pattern in patterns:
+        for path in directory.glob(pattern):
+            key = str(path.resolve()).lower()
+            if key not in seen:
+                seen.add(key)
+                files.append(path)
+    return files
+
+
 def batch_extract(iso_dir: str, output_dir: str = None) -> dict:
     """Process multiple ISOs in a directory"""
     iso_dir = Path(iso_dir)
     results = {'success': [], 'failed': []}
     
-    iso_files = list(iso_dir.glob('*.iso')) + list(iso_dir.glob('*.ISO'))
-    iso_files += list(iso_dir.glob('*.bin')) + list(iso_dir.glob('*.BIN'))
+    iso_files = _unique_glob(iso_dir, ['*.iso', '*.ISO', '*.bin', '*.BIN'])
     
     if not iso_files:
         print(f"No ISO files found in {iso_dir}")

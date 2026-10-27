@@ -5,10 +5,9 @@ Run with: pytest tests/test_ghidra_analyze.py -v
 """
 
 import pytest
-import tempfile
 import os
 from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 
 # Add scripts to path
 import sys
@@ -19,6 +18,7 @@ from ghidra_analyze import (
     GHIDRA_PATH,
     PROJECT_NAME
 )
+from platform_utils import GHIDRA_HEADLESS_NAME
 
 
 class TestFindGhidra:
@@ -29,31 +29,30 @@ class TestFindGhidra:
         result = find_ghidra()
         assert result is None or isinstance(result, str)
 
-    def test_default_ghidra_path_is_macos_style(self):
-        """Test default path is macOS Applications style"""
-        assert "Applications" in GHIDRA_PATH or "ghidra" in GHIDRA_PATH.lower()
+    def test_default_ghidra_path_mentions_headless(self):
+        """Test default path references analyzeHeadless"""
+        assert "analyzeHeadless" in GHIDRA_PATH or "ghidra" in GHIDRA_PATH.lower()
 
-    @patch('os.path.exists')
-    def test_find_ghidra_checks_default_path_first(self, mock_exists):
-        """Test that default path is checked first"""
+    @patch('platform_utils.os.path.exists')
+    def test_find_ghidra_checks_search_paths(self, mock_exists):
+        """Test that a discovered path is returned when it exists"""
         mock_exists.return_value = True
-        
-        result = find_ghidra()
-        
-        # Should return the default path if it exists
-        assert result is not None
 
-    @patch('os.path.exists')
-    @patch('subprocess.run')
-    def test_find_ghidra_falls_back_to_which(self, mock_run, mock_exists):
-        """Test fallback to 'which' command"""
-        mock_exists.return_value = False
-        mock_run.return_value = Mock(returncode=0, stdout='/usr/local/bin/analyzeHeadless\n')
-        
         result = find_ghidra()
-        
-        # Should have tried 'which'
-        mock_run.assert_called()
+
+        assert result is not None
+        assert GHIDRA_HEADLESS_NAME in result or "analyzeHeadless" in result
+
+    @patch('platform_utils.os.path.exists', return_value=False)
+    @patch('platform_utils.shutil.which')
+    def test_find_ghidra_falls_back_to_path(self, mock_which, mock_exists):
+        """Test fallback to PATH via shutil.which"""
+        mock_which.return_value = f'/usr/local/bin/{GHIDRA_HEADLESS_NAME}'
+
+        result = find_ghidra()
+
+        assert result == f'/usr/local/bin/{GHIDRA_HEADLESS_NAME}'
+        mock_which.assert_called()
 
 
 class TestConstants:
@@ -82,10 +81,10 @@ class TestAnalyzeElf:
     def test_analyze_elf_nonexistent_file(self, tmp_path):
         """Test handling of non-existent ELF file"""
         from ghidra_analyze import analyze_elf
-        
+
         fake_path = tmp_path / "nonexistent.elf"
         success, message = analyze_elf(str(fake_path))
-        
+
         assert success is False
         assert "not found" in message.lower()
 
@@ -93,11 +92,11 @@ class TestAnalyzeElf:
     def test_analyze_elf_no_ghidra(self, mock_find, mock_elf):
         """Test handling when Ghidra is not found"""
         from ghidra_analyze import analyze_elf
-        
+
         mock_find.return_value = None
-        
+
         success, message = analyze_elf(str(mock_elf))
-        
+
         assert success is False
         assert "ghidra" in message.lower()
 
@@ -106,20 +105,15 @@ class TestAnalyzeElf:
     def test_analyze_elf_creates_output_dir(self, mock_run, mock_find, mock_elf, tmp_path):
         """Test that output directory is created"""
         from ghidra_analyze import analyze_elf
-        
+
         mock_find.return_value = "/usr/bin/analyzeHeadless"
         mock_run.return_value = Mock(returncode=0, stdout='', stderr='')
-        
+
         output_dir = tmp_path / "new_output"
-        
-        # Will fail after dir creation due to mock, but dir should exist
-        try:
-            analyze_elf(str(mock_elf), str(output_dir), ghidra_path="/usr/bin/analyzeHeadless")
-        except:
-            pass
-        
-        # Output dir should be created (or its parent structure)
-        # Implementation may vary
+
+        analyze_elf(str(mock_elf), str(output_dir), ghidra_path="/usr/bin/analyzeHeadless")
+
+        assert output_dir.exists()
 
     @patch('ghidra_analyze.find_ghidra')
     @patch('subprocess.run')
@@ -127,14 +121,30 @@ class TestAnalyzeElf:
         """Test that subprocess timeout is handled"""
         from ghidra_analyze import analyze_elf
         import subprocess
-        
+
         mock_find.return_value = "/usr/bin/analyzeHeadless"
         mock_run.side_effect = subprocess.TimeoutExpired(cmd="test", timeout=300)
-        
+
         success, message = analyze_elf(str(mock_elf), ghidra_path="/usr/bin/analyzeHeadless")
-        
+
         assert success is False
         assert "timed out" in message.lower() or "timeout" in message.lower()
+
+    @patch('ghidra_analyze.find_ghidra')
+    @patch('subprocess.run')
+    def test_analyze_elf_uses_ghidra_command_wrapper(self, mock_run, mock_find, mock_elf, tmp_path):
+        """Ensure analyze_elf builds a platform-aware command list"""
+        from ghidra_analyze import analyze_elf
+        from platform_utils import ghidra_command
+
+        mock_find.return_value = "/usr/bin/analyzeHeadless"
+        mock_run.return_value = Mock(returncode=0, stdout='', stderr='')
+
+        analyze_elf(str(mock_elf), str(tmp_path / "out"), ghidra_path="/usr/bin/analyzeHeadless")
+
+        first_cmd = mock_run.call_args_list[0][0][0]
+        expected_prefix = ghidra_command("/usr/bin/analyzeHeadless")
+        assert first_cmd[:len(expected_prefix)] == expected_prefix
 
 
 class TestCreateGhidraScripts:
@@ -143,43 +153,46 @@ class TestCreateGhidraScripts:
     def test_create_ghidra_scripts_creates_directory(self, tmp_path):
         """Test that scripts directory is created"""
         from ghidra_analyze import create_ghidra_scripts
-        
+
         output_dir = tmp_path / "output"
         output_dir.mkdir()
-        
+
         create_ghidra_scripts(output_dir)
-        
+
         scripts_dir = output_dir / "ghidra_scripts"
         assert scripts_dir.exists()
 
     def test_create_ghidra_scripts_creates_export_script(self, tmp_path):
         """Test that ExportCCode.java is created"""
         from ghidra_analyze import create_ghidra_scripts
-        
+
         output_dir = tmp_path / "output"
         output_dir.mkdir()
-        
+
         create_ghidra_scripts(output_dir)
-        
+
         export_script = output_dir / "ghidra_scripts" / "ExportCCode.java"
         assert export_script.exists()
 
     def test_export_script_is_valid_java(self, tmp_path):
         """Test that generated Java script has expected structure"""
         from ghidra_analyze import create_ghidra_scripts
-        
+
         output_dir = tmp_path / "output"
         output_dir.mkdir()
-        
+
         create_ghidra_scripts(output_dir)
-        
+
         export_script = output_dir / "ghidra_scripts" / "ExportCCode.java"
-        content = export_script.read_text()
-        
+        content = export_script.read_text(encoding='utf-8')
+
         # Check for expected Java elements
         assert "public class ExportCCode" in content
         assert "extends GhidraScript" in content
         assert "public void run()" in content
+        # Portable temp dir (Windows + Unix), not a hardcoded /tmp path
+        assert "java.io.tmpdir" in content
+        assert '"/tmp/decompiled.c"' not in content
 
 
 class TestIntegration:
@@ -198,14 +211,15 @@ class TestIntegration:
     def test_ghidra_help_runs(self, has_ghidra):
         """Test that Ghidra headless can show help"""
         import subprocess
-        
+        from platform_utils import ghidra_command
+
         result = subprocess.run(
-            [has_ghidra, "--help"],
+            ghidra_command(has_ghidra, "--help"),
             capture_output=True,
             text=True,
             timeout=30
         )
-        
+
         # Ghidra help should run without error
         # (returncode may vary but shouldn't crash)
         assert result.returncode is not None
