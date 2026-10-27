@@ -38,9 +38,6 @@ Thumbs.db
 ehthumbs.db
 Desktop.ini
 *.exe
-!tools/ccc/bin/*.exe
-tools/ccc/bin/Release/
-tools/ccc/bin/Debug/
 
 # Ghidra project files
 *.gpr
