@@ -26,7 +26,23 @@ git clone https://github.com/YOUR_USERNAME/ps2-decompiler.git
 cd ps2-decompiler
 ```
 
-### 2. Build CCC Tools
+On Windows, check out this repo then run the installer (recommended):
+
+```powershell
+cd ps2-decompiler
+# If scripts are blocked once:
+# Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+
+.\install.ps1
+# With Ghidra already installed:
+.\install.ps1 -GhidraInstallDir "C:\ghidra_11.4_PUBLIC"
+```
+
+`install.ps1` checks Python/Git/CMake, initializes the CCC submodule, builds CCC
+(with Visual Studio / Ninja / NMake — avoiding the invalid `-A x64` + NMake combo),
+optionally sets `GHIDRA_INSTALL_DIR`, and runs a tool check.
+
+### 2. Build CCC Tools (manual)
 
 **macOS / Linux:**
 
@@ -37,7 +53,7 @@ cmake --build bin/
 cd ../..
 ```
 
-**Windows:** use the helper script (picks a working CMake generator automatically):
+**Windows (without install.ps1):**
 
 ```bat
 git submodule update --init --recursive
@@ -172,8 +188,10 @@ tools\ccc\bin\stdump.exe types game.elf > types.h
 | `scripts/ps2_workflow.py` | Full automated pipeline |
 | `scripts/ghidra_analyze.py` | Headless Ghidra analysis |
 | `scripts/platform_utils.py` | Cross-platform path / tool helpers |
+| `install.ps1` | Windows installer (prereqs, CCC build, Ghidra env) |
 | `decompile.sh` | Shell wrapper (macOS/Linux) |
 | `decompile.bat` / `decompile.ps1` | Windows wrappers |
+| `scripts/build_ccc.bat` | Windows CCC/CMake build helper |
 
 ### CCC Tools (Chaos Compiler Collection)
 
