@@ -8,13 +8,14 @@ A comprehensive toolkit for PlayStation 2 reverse engineering and decompilation,
 - **Symbol Recovery**: Extract debug symbols using CCC (stdump, uncc, demangle)
 - **Ghidra Integration**: Full support via [ghidra-emotionengine-reloaded](https://github.com/chaoticgd/ghidra-emotionengine-reloaded)
 - **Automated Workflow**: End-to-end pipeline from ISO to decompiled C code
+- **Cross-platform**: Works on Windows, macOS, and Linux
 
 ## Requirements
 
 - **Python 3.8+**
 - **Ghidra 11.4+** with [ghidra-emotionengine-reloaded](https://github.com/chaoticgd/ghidra-emotionengine-reloaded) extension
 - **CMake** (for building CCC tools)
-- **macOS/Linux** (Windows support possible with modifications)
+- **Windows, macOS, or Linux**
 
 ## Installation
 
@@ -27,6 +28,8 @@ cd ps2-decompiler
 
 ### 2. Build CCC Tools
 
+**macOS / Linux:**
+
 ```bash
 cd tools/ccc
 cmake -B bin/
@@ -34,23 +37,63 @@ cmake --build bin/
 cd ../..
 ```
 
+**Windows (Developer Command Prompt or PowerShell with CMake/Visual Studio):**
+
+```bat
+cd tools\ccc
+cmake -B bin -A x64
+cmake --build bin --config Release
+cd ..\..
+```
+
+Built binaries land in `tools\ccc\bin\` (or `tools\ccc\bin\Release\` depending on generator). Copy or ensure `stdump.exe`, `uncc.exe`, and `demangle.exe` are under `tools\ccc\bin\` so the scripts can find them.
+
 ### 3. Install Ghidra Extension
 
-Download the latest release from [ghidra-emotionengine-reloaded](https://github.com/chaoticgd/ghidra-emotionengine-reloaded/releases) and install to your Ghidra extensions folder:
+Download the latest release from [ghidra-emotionengine-reloaded](https://github.com/chaoticgd/ghidra-emotionengine-reloaded/releases) and install into your Ghidra extensions folder:
 
 ```bash
 # macOS
 unzip ghidra-emotionengine-reloaded.zip -d /Applications/Ghidra/Ghidra/Extensions/
 ```
 
-### 4. Verify Installation
+```bat
+REM Windows (adjust Ghidra path as needed)
+tar -xf ghidra-emotionengine-reloaded.zip -C "%GHIDRA_INSTALL_DIR%\Ghidra\Extensions"
+```
+
+Or use Ghidra's UI: **File → Install Extensions…**
+
+### 4. Point the toolkit at Ghidra (optional)
+
+Scripts auto-detect Ghidra via common install locations and environment variables:
+
+| Variable | Meaning |
+|----------|---------|
+| `GHIDRA_INSTALL_DIR` | Ghidra root (contains `support/`) |
+| `GHIDRA_HOME` | Same as above |
+| `GHIDRA_PATH` | Full path to `analyzeHeadless` / `analyzeHeadless.bat` |
+
+**Windows example:**
+
+```bat
+setx GHIDRA_INSTALL_DIR "C:\ghidra_11.4_PUBLIC"
+```
+
+### 5. Verify Installation
 
 ```bash
-# Check CCC tools
+# Check CCC tools (Unix)
 ./tools/ccc/bin/stdump --help
 
+# Check CCC tools (Windows)
+tools\ccc\bin\stdump.exe --help
+
 # Check extract script
-python3 scripts/extract_elf.py --help
+python scripts/extract_elf.py --help
+
+# Check tool discovery
+python scripts/ps2_workflow.py --check-tools
 ```
 
 ## Quick Start
@@ -59,26 +102,35 @@ python3 scripts/extract_elf.py --help
 
 ```bash
 # Single ISO
-python3 scripts/extract_elf.py game.iso ./elfs/
+python scripts/extract_elf.py game.iso ./elfs/
 
 # List ISO contents without extracting
-python3 scripts/extract_elf.py --list game.iso
+python scripts/extract_elf.py --list game.iso
 
 # Batch process multiple ISOs
-python3 scripts/extract_elf.py --batch ./isos/ ./elfs/
+python scripts/extract_elf.py --batch ./isos/ ./elfs/
 ```
 
 ### Extract Debug Symbols (if available)
 
 ```bash
-# Check what symbol tables exist
+# Unix
 ./tools/ccc/bin/stdump identify game.elf
-
-# Extract types, functions, globals
 ./tools/ccc/bin/stdump types game.elf > types.h
-./tools/ccc/bin/stdump functions game.elf > functions.cpp
-./tools/ccc/bin/stdump globals game.elf > globals.cpp
+
+# Windows
+tools\ccc\bin\stdump.exe identify game.elf
+tools\ccc\bin\stdump.exe types game.elf > types.h
 ```
+
+### Full pipeline wrappers
+
+| Platform | Command |
+|----------|---------|
+| macOS / Linux | `./decompile.sh game.iso` |
+| Windows CMD | `decompile.bat game.iso` |
+| Windows PowerShell | `.\decompile.ps1 game.iso` |
+| Any (Python) | `python scripts/ps2_workflow.py game.iso -o output` |
 
 ### Analyze in Ghidra
 
@@ -97,7 +149,9 @@ python3 scripts/extract_elf.py --batch ./isos/ ./elfs/
 | `scripts/extract_elf.py` | Extract ELF executables from PS2 ISOs |
 | `scripts/ps2_workflow.py` | Full automated pipeline |
 | `scripts/ghidra_analyze.py` | Headless Ghidra analysis |
-| `decompile.sh` | Shell wrapper for common operations |
+| `scripts/platform_utils.py` | Cross-platform path / tool helpers |
+| `decompile.sh` | Shell wrapper (macOS/Linux) |
+| `decompile.bat` / `decompile.ps1` | Windows wrappers |
 
 ### CCC Tools (Chaos Compiler Collection)
 
@@ -124,17 +178,20 @@ ps2-decompiler/
 ├── scripts/
 │   ├── extract_elf.py      # ISO extraction tool
 │   ├── ps2_workflow.py     # Full workflow automation
-│   └── ghidra_analyze.py   # Headless Ghidra wrapper
+│   ├── ghidra_analyze.py   # Headless Ghidra wrapper
+│   └── platform_utils.py   # Windows/macOS/Linux helpers
 ├── tools/
 │   └── ccc/                # CCC symbol extraction tools
 │       └── bin/
-│           ├── stdump      # Symbol table dumper
-│           ├── uncc        # Source file organizer
-│           └── demangle    # C++ demangler
+│           ├── stdump[.exe]
+│           ├── uncc[.exe]
+│           └── demangle[.exe]
 ├── isos/                   # Place your ISO files here
 ├── elfs/                   # Extracted ELF files
 ├── output/                 # Analysis output
-├── decompile.sh           # Main shell script
+├── decompile.sh            # Unix pipeline wrapper
+├── decompile.bat           # Windows CMD wrapper
+├── decompile.ps1           # Windows PowerShell wrapper
 └── README.md
 ```
 
@@ -147,7 +204,7 @@ ps2-decompiler/
 cp "My Game.iso" isos/
 
 # 2. Extract the ELF
-python3 scripts/extract_elf.py "isos/My Game.iso" elfs/
+python scripts/extract_elf.py "isos/My Game.iso" elfs/
 
 # 3. Check for debug symbols
 ./tools/ccc/bin/stdump identify "elfs/My Game.elf"
@@ -164,13 +221,18 @@ python3 scripts/extract_elf.py "isos/My Game.iso" elfs/
 
 ```bash
 # Process all ISOs in a folder
-python3 scripts/extract_elf.py --batch isos/ elfs/
+python scripts/extract_elf.py --batch isos/ elfs/
 
-# Extract symbols from all ELFs
+# Extract symbols from all ELFs (Unix)
 for elf in elfs/*.elf; do
     name=$(basename "$elf" .elf)
     ./tools/ccc/bin/stdump types "$elf" > "output/${name}_types.h"
 done
+```
+
+```bat
+REM Extract symbols from all ELFs (Windows CMD)
+for %%f in (elfs\*.elf) do tools\ccc\bin\stdump.exe types "%%f" > "output\%%~nf_types.h"
 ```
 
 ## PS2 Technical Notes
@@ -208,8 +270,19 @@ Most retail PS2 games are stripped of debug symbols. Use Ghidra for analysis ins
 1. Ensure ghidra-emotionengine-reloaded is installed
 2. Manually select: `MIPS:LE:64:R5900` in the import dialog
 
+### Ghidra not found on Windows
+1. Set `GHIDRA_INSTALL_DIR` to your Ghidra root folder
+2. Or pass `--ghidra` with the full path to `analyzeHeadless.bat`
+3. Confirm Java is installed (Ghidra requires a JDK)
+
 ### PCSX2 save states won't import
 Change PCSX2 compression from zstd to Deflate64 in settings.
+
+### PowerShell script blocked
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+```
+Or run via CMD: `decompile.bat ...`
 
 ## Resources
 

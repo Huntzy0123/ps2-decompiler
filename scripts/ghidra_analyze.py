@@ -4,54 +4,36 @@ Ghidra Headless Analysis Script for PS2 ELF files
 Runs Ghidra in headless mode to analyze and decompile PS2 executables
 
 Usage:
-    python3 ghidra_analyze.py <elf_file> [output_directory]
-    python3 ghidra_analyze.py --batch <elf_directory> [output_directory]
+    python ghidra_analyze.py <elf_file> [output_directory]
+    python ghidra_analyze.py --batch <elf_directory> [output_directory]
 """
 
 import os
 import sys
 import argparse
 import subprocess
-import shutil
 from pathlib import Path
-from typing import Optional, List, Tuple
+from typing import Optional, Tuple
+
+from platform_utils import (
+    GHIDRA_HEADLESS_NAME,
+    find_ghidra,
+    ghidra_command,
+)
 
 
-# Default Ghidra installation path on macOS
-GHIDRA_PATH = "/Applications/Ghidra/support/analyzeHeadless"
+# Kept for backwards compatibility / tests; prefer find_ghidra()
+GHIDRA_PATH = os.environ.get(
+    "GHIDRA_PATH",
+    f"/Applications/Ghidra/support/{GHIDRA_HEADLESS_NAME}",
+)
 
 # Ghidra project settings
 PROJECT_NAME = "PS2Analysis"
 
 
-def find_ghidra() -> Optional[str]:
-    """Find Ghidra headless analyzer"""
-    # Check default macOS location
-    if os.path.exists(GHIDRA_PATH):
-        return GHIDRA_PATH
-    
-    # Check common locations
-    common_paths = [
-        "/Applications/Ghidra/support/analyzeHeadless",
-        os.path.expanduser("~/ghidra/support/analyzeHeadless"),
-        "/opt/ghidra/support/analyzeHeadless",
-        "/usr/local/ghidra/support/analyzeHeadless",
-    ]
-    
-    for path in common_paths:
-        if os.path.exists(path):
-            return path
-    
-    # Try to find via which/where
-    result = subprocess.run(['which', 'analyzeHeadless'], capture_output=True, text=True)
-    if result.returncode == 0:
-        return result.stdout.strip()
-    
-    return None
-
-
 def analyze_elf(
-    elf_path: str, 
+    elf_path: str,
     output_dir: str = None,
     ghidra_path: str = None,
     export_c: bool = True,
@@ -59,36 +41,36 @@ def analyze_elf(
 ) -> Tuple[bool, str]:
     """
     Analyze PS2 ELF with Ghidra headless
-    
+
     Returns:
         (success, message)
     """
     elf_path = Path(elf_path)
-    
+
     if not elf_path.exists():
         return False, f"ELF file not found: {elf_path}"
-    
+
     if ghidra_path is None:
         ghidra_path = find_ghidra()
-    
+
     if ghidra_path is None:
         return False, "Ghidra headless analyzer not found"
-    
+
     if output_dir is None:
         output_dir = elf_path.parent / "output"
     else:
         output_dir = Path(output_dir)
-    
+
     output_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # Create temporary project directory
     project_dir = output_dir / "ghidra_projects"
     project_dir.mkdir(exist_ok=True)
-    
+
     base_name = elf_path.stem
-    
+
     # Build Ghidra headless command
-    cmd = [
+    cmd = ghidra_command(
         ghidra_path,
         str(project_dir),
         PROJECT_NAME,
@@ -97,31 +79,31 @@ def analyze_elf(
         "-cspec", "default",
         "-noanalysis",  # We'll run analysis separately
         "-overwrite",   # Overwrite if exists
-    ]
-    
+    )
+
     print(f"  Importing {elf_path.name}...")
-    
+
     # Run import
     try:
         result = subprocess.run(
-            cmd, 
-            capture_output=True, 
+            cmd,
+            capture_output=True,
             text=True,
             timeout=300  # 5 minute timeout
         )
-        
+
         if result.returncode != 0:
             return False, f"Import failed: {result.stderr}"
-    
+
     except subprocess.TimeoutExpired:
         return False, "Import timed out"
     except Exception as e:
         return False, f"Import error: {str(e)}"
-    
+
     # Run analysis
     print(f"  Analyzing...")
-    
-    analyze_cmd = [
+
+    analyze_cmd = ghidra_command(
         ghidra_path,
         str(project_dir),
         PROJECT_NAME,
@@ -129,15 +111,15 @@ def analyze_elf(
         "-noanalysis",  # Skip auto-analysis, use post-script
         "-postScript", "AutoAnalysis.java",
         "-postScript", "DecompileAllFunctions.java",
-    ]
-    
+    )
+
     if export_c:
         # Add decompile export
         analyze_cmd.extend([
             "-postScript", "ExportCCode.java",
             str(output_dir / f"{base_name}_decompiled.c")
         ])
-    
+
     try:
         result = subprocess.run(
             analyze_cmd,
@@ -149,7 +131,7 @@ def analyze_elf(
         return False, "Analysis timed out"
     except Exception as e:
         return False, f"Analysis error: {str(e)}"
-    
+
     return True, f"Analysis complete. Output: {output_dir}"
 
 
@@ -157,8 +139,9 @@ def create_ghidra_scripts(output_dir: Path):
     """Create Ghidra analysis scripts"""
     scripts_dir = output_dir / "ghidra_scripts"
     scripts_dir.mkdir(exist_ok=True)
-    
+
     # Export all decompiled C code script
+    # Default output uses java.io.tmpdir so it works on Windows and Unix
     export_script = '''
 // ExportCCode.java - Export decompiled C code for all functions
 // @category Analysis
@@ -175,7 +158,8 @@ public class ExportCCode extends GhidraScript {
     @Override
     public void run() throws Exception {
         String[] args = getScriptArgs();
-        String outputPath = args.length > 0 ? args[0] : "/tmp/decompiled.c";
+        String defaultOut = System.getProperty("java.io.tmpdir") + File.separator + "decompiled.c";
+        String outputPath = args.length > 0 ? args[0] : defaultOut;
         
         DecompInterface decompiler = new DecompInterface();
         decompiler.openProgram(currentProgram);
@@ -215,10 +199,10 @@ public class ExportCCode extends GhidraScript {
     }
 }
 '''
-    
-    with open(scripts_dir / "ExportCCode.java", 'w') as f:
+
+    with open(scripts_dir / "ExportCCode.java", 'w', encoding='utf-8', newline='\n') as f:
         f.write(export_script)
-    
+
     print(f"Created Ghidra scripts in {scripts_dir}")
 
 
@@ -226,42 +210,51 @@ def main():
     parser = argparse.ArgumentParser(
         description='Analyze PS2 ELF files with Ghidra headless'
     )
-    
+
     parser.add_argument('input', help='ELF file or directory (with --batch)')
     parser.add_argument('output', nargs='?', help='Output directory')
     parser.add_argument('--batch', action='store_true', help='Process all ELFs in directory')
     parser.add_argument('--ghidra', help='Path to Ghidra analyzeHeadless')
     parser.add_argument('--no-decompile', action='store_true', help='Skip decompilation')
-    
+
     args = parser.parse_args()
-    
+
     ghidra = args.ghidra or find_ghidra()
     if not ghidra:
         print("ERROR: Ghidra not found. Please specify path with --ghidra")
-        print("Expected location: /Applications/Ghidra/support/analyzeHeadless")
+        print(f"Expected launcher: support/{GHIDRA_HEADLESS_NAME}")
+        print("Or set GHIDRA_INSTALL_DIR / GHIDRA_HOME / GHIDRA_PATH")
         sys.exit(1)
-    
+
     print(f"Using Ghidra: {ghidra}")
-    
+
     if args.batch:
         elf_dir = Path(args.input)
-        elf_files = list(elf_dir.glob('*.elf')) + list(elf_dir.glob('*.ELF'))
-        
+        # Deduplicate for case-insensitive filesystems (Windows)
+        seen = set()
+        elf_files = []
+        for pattern in ('*.elf', '*.ELF'):
+            for path in elf_dir.glob(pattern):
+                key = str(path.resolve()).lower()
+                if key not in seen:
+                    seen.add(key)
+                    elf_files.append(path)
+
         print(f"Found {len(elf_files)} ELF files")
-        
+
         for elf_file in elf_files:
             print(f"\nProcessing: {elf_file.name}")
             success, message = analyze_elf(
-                str(elf_file), 
-                args.output, 
+                str(elf_file),
+                args.output,
                 ghidra,
                 export_c=not args.no_decompile
             )
             print(f"  {'SUCCESS' if success else 'FAILED'}: {message}")
     else:
         success, message = analyze_elf(
-            args.input, 
-            args.output, 
+            args.input,
+            args.output,
             ghidra,
             export_c=not args.no_decompile
         )

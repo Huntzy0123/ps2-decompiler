@@ -1,10 +1,21 @@
 #!/bin/bash
 # PS2 ISO Decompilation Pipeline
 # Extracts ELF from ISO and runs Ghidra analysis
+# On Windows, use decompile.bat or decompile.ps1 instead.
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Prefer python3, fall back to python
+if command -v python3 >/dev/null 2>&1; then
+    PYTHON=python3
+elif command -v python >/dev/null 2>&1; then
+    PYTHON=python
+else
+    echo "ERROR: Python 3 not found on PATH"
+    exit 1
+fi
 
 usage() {
     echo "PS2 Decompilation Pipeline"
@@ -22,6 +33,8 @@ usage() {
     echo "  $0 game.iso"
     echo "  $0 --batch ./isos/ ./output/"
     echo "  $0 --extract-only game.iso"
+    echo ""
+    echo "Windows: use decompile.bat or .\\decompile.ps1"
 }
 
 EXTRACT_ONLY=false
@@ -73,9 +86,9 @@ if [ "$ANALYZE_ONLY" = false ]; then
     echo "=== Step 1: Extracting ELF from ISO ==="
     
     if [ "$BATCH" = true ]; then
-        python3 "$SCRIPT_DIR/scripts/extract_elf.py" --batch "$INPUT" "$OUTPUT/elfs"
+        "$PYTHON" "$SCRIPT_DIR/scripts/extract_elf.py" --batch "$INPUT" "$OUTPUT/elfs"
     else
-        python3 "$SCRIPT_DIR/scripts/extract_elf.py" "$INPUT" "$OUTPUT/elfs"
+        "$PYTHON" "$SCRIPT_DIR/scripts/extract_elf.py" "$INPUT" "$OUTPUT/elfs"
     fi
     
     echo ""
@@ -90,9 +103,9 @@ if [ "$EXTRACT_ONLY" = false ]; then
     fi
     
     if [ -d "$ELF_DIR" ]; then
-        python3 "$SCRIPT_DIR/scripts/ghidra_analyze.py" --batch "$ELF_DIR" "$OUTPUT/decompiled"
+        "$PYTHON" "$SCRIPT_DIR/scripts/ghidra_analyze.py" --batch "$ELF_DIR" "$OUTPUT/decompiled"
     elif [ -f "$ELF_DIR" ]; then
-        python3 "$SCRIPT_DIR/scripts/ghidra_analyze.py" "$ELF_DIR" "$OUTPUT/decompiled"
+        "$PYTHON" "$SCRIPT_DIR/scripts/ghidra_analyze.py" "$ELF_DIR" "$OUTPUT/decompiled"
     fi
 fi
 
